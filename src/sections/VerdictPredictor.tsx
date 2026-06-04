@@ -1,18 +1,66 @@
+import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import type { CFUserInfo } from '@/hooks/useVerdictPredictor';
 import { useVerdictPredictor } from '@/hooks/useVerdictPredictor';
 import { cn } from '@/lib/utils';
+import { VERDICTS } from '@/types/verdict';
+
+function CFUserBadge({ user }: { user: CFUserInfo }) {
+  return (
+    <div className="flex items-center justify-center gap-3 mb-6">
+      <span
+        className="text-2xl font-bold"
+        style={{ color: user.color }}
+      >
+        {user.handle}
+      </span>
+      <span
+        className="text-lg px-3 py-1 rounded-full font-semibold"
+        style={{
+          color: user.color,
+          border: `1px solid ${user.color}`,
+          backgroundColor: user.rating >= 3000 ? '#000' : 'transparent',
+        }}
+      >
+        Rating: {user.rating}
+      </span>
+      <span className="text-sm text-gray-400">{user.rank}</span>
+    </div>
+  );
+}
 
 export function VerdictPredictor() {
-  const { predictions, isPredicting, lastPredicted, generatePredictions } = useVerdictPredictor();
+  const {
+    predictions,
+    isPredicting,
+    lastPredicted,
+    generatePredictions,
+    cfUser,
+    cfHandle,
+    setCFHandle,
+    isLoadingCF,
+    cfError,
+    fetchCFUser,
+  } = useVerdictPredictor();
+
+  const [inputValue, setInputValue] = useState('');
+
+  const handleCFSubmit = () => {
+    setCFHandle(inputValue);
+    fetchCFUser(inputValue);
+  };
 
   return (
-    <div className="min-h-screen" style={{ backgroundColor: '#0f172a' }}>
-      {/* Header */}
-      <div className="max-w-4xl mx-auto px-8 py-12">
-        <div className="text-center mb-12">
+    <div className="min-h-screen flex flex-col" style={{ backgroundColor: '#0f172a' }}>
+      {/* Sticky Header */}
+      <div className="flex-1 flex flex-col max-w-4xl w-full mx-auto px-4 py-8">
+
+        {/* Title */}
+        <div className="text-center mb-8">
           <h1
-            className="text-5xl font-bold mb-4"
+            className="text-5xl font-bold mb-2"
             style={{
               background: 'linear-gradient(to right, #60a5fa, #a78bfa)',
               WebkitBackgroundClip: 'text',
@@ -22,13 +70,39 @@ export function VerdictPredictor() {
           >
             Verdict Predictor
           </h1>
-          <p className="text-gray-400 text-lg">
+          <p className="text-gray-400 text-base">
             Predict your next submission verdict on Codeforces
           </p>
         </div>
 
+        {/* CF Handle Input */}
+        <div className="flex justify-center gap-2 mb-8">
+          <Input
+            type="text"
+            placeholder="Enter your Codeforces handle..."
+            value={inputValue}
+            onChange={e => setInputValue(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && handleCFSubmit()}
+            className="w-64 bg-[#1a1f3a] border-[#2a2f4a] text-white placeholder:text-gray-500"
+          />
+          <Button
+            onClick={handleCFSubmit}
+            disabled={isLoadingCF || !inputValue.trim()}
+            size="sm"
+            className="bg-blue-600 hover:bg-blue-700 text-white"
+          >
+            {isLoadingCF ? '...' : 'OK'}
+          </Button>
+        </div>
+        {cfError && (
+          <p className="text-center text-red-400 text-sm mb-4">{cfError}</p>
+        )}
+
+        {/* CF User Badge */}
+        {cfUser && <CFUserBadge user={cfUser} />}
+
         {/* Predict Button */}
-        <div className="flex justify-center mb-12">
+        <div className="flex justify-center mb-10">
           <button
             onClick={generatePredictions}
             disabled={isPredicting}
@@ -41,21 +115,17 @@ export function VerdictPredictor() {
               background: isPredicting
                 ? 'linear-gradient(to right, #2563eb, #7c3aed)'
                 : 'linear-gradient(to right, #3b82f6, #8b5cf6)',
-              boxShadow: isPredicting
-                ? '0 0 30px rgba(59, 130, 246, 0.5)'
-                : '0 0 30px rgba(59, 130, 246, 0.5)',
+              boxShadow: '0 0 30px rgba(59, 130, 246, 0.5)',
               color: 'white',
               border: 'none',
             }}
-            onMouseEnter={(e) => {
+            onMouseEnter={e => {
               if (!isPredicting) {
-                e.currentTarget.style.background = 'linear-gradient(to right, #2563eb, #7c3aed)';
                 e.currentTarget.style.boxShadow = '0 0 40px rgba(59, 130, 246, 0.7)';
               }
             }}
-            onMouseLeave={(e) => {
+            onMouseLeave={e => {
               if (!isPredicting) {
-                e.currentTarget.style.background = 'linear-gradient(to right, #3b82f6, #8b5cf6)';
                 e.currentTarget.style.boxShadow = '0 0 30px rgba(59, 130, 246, 0.5)';
               }
             }}
@@ -143,7 +213,7 @@ export function VerdictPredictor() {
                       </p>
                     </div>
                   </div>
-                  {/* Custom Progress Bar */}
+                  {/* Progress Bar */}
                   <div
                     className="h-3 rounded-full overflow-hidden"
                     style={{ backgroundColor: '#0a0e27' }}
@@ -166,8 +236,9 @@ export function VerdictPredictor() {
         {/* Footer */}
         <div className="mt-12 text-center text-gray-600 text-sm">
           <p>🎯 This is just for fun! Don't take it seriously 😄</p>
-          <p className="mt-2">Inspired by Codeforces verdict system</p>
+          <p className="mt-1">Inspired by Codeforces verdict system</p>
         </div>
+
       </div>
     </div>
   );

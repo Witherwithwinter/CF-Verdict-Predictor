@@ -55,13 +55,6 @@ export const VERDICTS: Verdict[] = [
     icon: '⚙',
   },
   {
-    id: 'PE',
-    name: 'Presentation Error',
-    fullName: 'Presentation Error',
-    color: '#fab1a0',
-    icon: '¶',
-  },
-  {
     id: 'ILE',
     name: 'Idleness Limit Exceeded',
     fullName: 'Idleness Limit Exceeded',
@@ -74,12 +67,5 @@ export const VERDICTS: Verdict[] = [
     fullName: 'Skipped',
     color: '#636e72',
     icon: '⊘',
-  },
-  {
-    id: 'TESTING',
-    name: 'Testing',
-    fullName: 'Testing on Testcase',
-    color: '#74b9ff',
-    icon: '◉',
   },
 ];
