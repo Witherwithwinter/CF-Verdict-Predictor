@@ -77,54 +77,46 @@ function getFunMessage(verdictId: string): string {
   return messages[Math.floor(Math.random() * messages.length)];
 }
 
+/* ---- CF User Badge ---- */
 function CFUserBadge({ user }: { user: CFUserInfo }) {
   const isLGM = user.rating >= 3000;
-  const isIM = user.rating >= 2600;
   return (
-    <div className="flex items-center justify-center gap-4 mb-6 flex-wrap">
+    <div className="flex items-center justify-center gap-3 mb-6 flex-wrap">
+      {/* Avatar */}
       <img
         src={user.avatar}
         alt={user.handle}
-        className="w-16 h-16 rounded-full border-2"
+        className="w-14 h-14 rounded-full border-2 shrink-0"
         style={{ borderColor: user.color }}
         onError={e => {
           (e.target as HTMLImageElement).src = 'https://userpic.codeforces.org/no-title.jpg';
         }}
       />
-      <div className="flex items-center gap-3 flex-wrap items-center">
-        <span
-          className="text-2xl font-bold px-2 py-0.5 rounded"
-          style={{
-            backgroundColor: isLGM ? '#000' : 'transparent',
-            color: isLGM ? '#FF0000' : user.color,
-            fontFamily: 'monospace',
-            letterSpacing: '0.5px',
-          }}
-        >
+
+      {/* Handle + Rating + Rank */}
+      <div className="flex items-center gap-3 flex-wrap">
+        {/* Handle — LGM: first char black, rest red */}
+        <span className="text-2xl font-bold" style={{ fontFamily: 'monospace' }}>
           {isLGM ? (
-            /* LGM: first char rendered with black color on black bg = "invisible" effect */
             <>
-              <span style={{ color: '#000', marginRight: '-0.05em' }}>{user.handle[0]}</span>
+              <span style={{ color: '#000' }}>{user.handle[0]}</span>
               <span style={{ color: '#FF0000' }}>{user.handle.slice(1)}</span>
             </>
           ) : (
             <span style={{ color: user.color }}>{user.handle}</span>
           )}
         </span>
+
+        {/* Rating pill */}
         <span
-          className="text-lg px-3 py-1 rounded-full font-semibold"
-          style={{
-            color: user.color,
-            border: `1px solid ${user.color}`,
-            backgroundColor: isLGM ? '#000' : 'transparent',
-          }}
+          className="text-base px-3 py-0.5 rounded-full font-semibold"
+          style={{ color: user.color, border: `1px solid ${user.color}` }}
         >
           {user.rating}
         </span>
-        <span
-          className="text-sm font-medium"
-          style={{ color: user.color }}
-        >
+
+        {/* Rank */}
+        <span className="text-sm font-medium" style={{ color: user.color }}>
           {user.rank}
         </span>
       </div>
@@ -132,6 +124,7 @@ function CFUserBadge({ user }: { user: CFUserInfo }) {
   );
 }
 
+/* ---- Main Component ---- */
 export function VerdictPredictor() {
   const {
     predictions,
@@ -167,12 +160,18 @@ export function VerdictPredictor() {
 
   return (
     <div className="min-h-screen flex flex-col" style={{ backgroundColor: '#0f172a' }}>
-      <div className="flex-1 flex flex-col w-full max-w-none px-4 sm:px-10 lg:px-32 py-8">
+      {/* 
+        Full-width layout:
+        - Mobile:  px-4 (16px) on each side
+        - Tablet:  px-6 (24px)
+        - Desktop: px-8 (32px) — no max-width, truly fullscreen
+      */}
+      <div className="flex-1 flex flex-col w-full px-4 sm:px-6 lg:px-8 py-6 sm:py-10">
 
-        {/* Title */}
+        {/* ===== Title ===== */}
         <div className="text-center mb-8">
           <h1
-            className="text-5xl font-bold mb-2"
+            className="text-4xl sm:text-5xl font-bold mb-2"
             style={{
               background: 'linear-gradient(to right, #60a5fa, #a78bfa)',
               WebkitBackgroundClip: 'text',
@@ -182,20 +181,20 @@ export function VerdictPredictor() {
           >
             Verdict Predictor
           </h1>
-          <p className="text-gray-400 text-base">
+          <p className="text-gray-400 text-sm sm:text-base">
             Predict your next submission verdict on Codeforces
           </p>
         </div>
 
-        {/* CF Handle Input */}
-        <div className="flex justify-center gap-2 mb-8">
+        {/* ===== CF Handle Input ===== */}
+        <div className="flex justify-center gap-2 mb-6 flex-wrap">
           <Input
             type="text"
             placeholder="Enter your Codeforces handle..."
             value={inputValue}
             onChange={e => setInputValue(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && handleCFSubmit()}
-            className="w-80 bg-[#1a1f3a] border-[#2a2f4a] text-white placeholder:text-gray-500"
+            className="w-72 sm:w-80 bg-[#1a1f3a] border-[#2a2f4a] text-white placeholder:text-gray-500"
           />
           <Button
             onClick={handleCFSubmit}
@@ -210,16 +209,16 @@ export function VerdictPredictor() {
           <p className="text-center text-red-400 text-sm mb-4">{cfError}</p>
         )}
 
-        {/* CF User Badge */}
+        {/* ===== CF User Badge ===== */}
         {cfUser && <CFUserBadge user={cfUser} />}
 
-        {/* Predict Button */}
+        {/* ===== Predict Button ===== */}
         <div className="flex justify-center mb-10">
           <button
             onClick={handlePredict}
             disabled={isPredicting}
             className={cn(
-              "text-xl px-12 py-6 font-bold rounded-xl transition-all duration-300",
+              "text-lg sm:text-xl px-10 sm:px-16 py-5 sm:py-6 font-bold rounded-xl transition-all duration-300",
               "disabled:opacity-50 disabled:cursor-not-allowed",
               isPredicting ? "cursor-not-allowed opacity-50" : "cursor-pointer"
             )}
@@ -256,47 +255,56 @@ export function VerdictPredictor() {
           </button>
         </div>
 
-        {/* Last Predicted Highlight */}
+        {/* ===== Last Predicted Highlight ===== */}
         {lastPredicted && !isPredicting && (
-          <div className="mb-8 text-center">
+          <div className="mb-8 w-full">
+            {/* 
+              Full-width card on all screens.
+              Centered text, no max-width cap.
+            */}
             <div
-              className="rounded-lg p-6 max-w-2xl mx-auto"
+              className="rounded-lg p-6 sm:p-8 w-full"
               style={{ backgroundColor: '#1a1f3a', border: '1px solid #2a2f4a' }}
             >
-              <p className="text-gray-400 mb-2">Most Likely Verdict:</p>
+              <p className="text-gray-400 mb-2 text-center text-sm sm:text-base">
+                Most Likely Verdict:
+              </p>
               <div
-                className="text-4xl font-bold mb-2"
+                className="text-3xl sm:text-4xl font-bold mb-2 text-center"
                 style={{ color: lastPredicted.verdict.color }}
               >
                 {lastPredicted.verdict.icon} {lastPredicted.verdict.fullName}
               </div>
               <p
-                className="text-2xl font-semibold mb-3"
+                className="text-2xl sm:text-3xl font-semibold mb-3 text-center"
                 style={{ color: lastPredicted.verdict.color }}
               >
                 {lastPredicted.probability}%
               </p>
               {funMessage && (
-                <p className="text-gray-300 text-sm italic">
-                  "{funMessage}"
+                <p className="text-gray-300 text-sm italic text-center">
+                  &ldquo;{funMessage}&rdquo;
                 </p>
               )}
             </div>
           </div>
         )}
 
-        {/* Predictions List */}
+        {/* ===== Predictions List ===== */}
         {predictions.length > 0 && !isPredicting && (
           <div
             className="rounded-lg overflow-hidden w-full"
             style={{ backgroundColor: '#1a1f3a', border: '1px solid #2a2f4a' }}
           >
-            <div className="p-6 border-b border-[#2a2f4a]">
-              <h2 className="text-2xl font-bold text-center text-gray-200">
+            {/* Header */}
+            <div className="p-4 sm:p-6 border-b border-[#2a2f4a]">
+              <h2 className="text-xl sm:text-2xl font-bold text-center text-gray-200">
                 Verdict Probabilities
               </h2>
             </div>
-            <div className="p-6 space-y-4">
+
+            {/* List */}
+            <div className="p-4 sm:p-6 space-y-4">
               {predictions.map((pred, index) => (
                 <div
                   key={pred.verdict.id}
@@ -309,21 +317,21 @@ export function VerdictPredictor() {
                   }}
                 >
                   <div className="flex items-center justify-between mb-3">
-                    <div className="flex items-center gap-3">
-                      <span className="text-2xl">{pred.verdict.icon}</span>
-                      <div>
+                    <div className="flex items-center gap-3 min-w-0">
+                      <span className="text-2xl shrink-0">{pred.verdict.icon}</span>
+                      <div className="min-w-0">
                         <p
-                          className="font-semibold text-lg"
+                          className="font-semibold text-base sm:text-lg truncate"
                           style={{ color: pred.verdict.color }}
                         >
                           {pred.verdict.fullName}
                         </p>
-                        <p className="text-sm text-gray-500">{pred.verdict.id}</p>
+                        <p className="text-xs sm:text-sm text-gray-500">{pred.verdict.id}</p>
                       </div>
                     </div>
-                    <div className="text-right">
+                    <div className="text-right shrink-0 ml-4">
                       <p
-                        className="text-2xl font-bold"
+                        className="text-xl sm:text-2xl font-bold"
                         style={{ color: pred.verdict.color }}
                       >
                         {pred.probability}%
@@ -350,9 +358,9 @@ export function VerdictPredictor() {
           </div>
         )}
 
-        {/* Footer */}
-        <div className="mt-12 text-center text-gray-600 text-sm">
-          <p>This is just for fun! Don't take it seriously 😄</p>
+        {/* ===== Footer ===== */}
+        <div className="mt-12 text-center text-gray-600 text-xs sm:text-sm">
+          <p>This is just for fun! Don&apos;t take it seriously 😄</p>
           <p className="mt-1">Inspired by Codeforces verdict system</p>
         </div>
 
