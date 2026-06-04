@@ -8,11 +8,18 @@ import { cn } from '@/lib/utils';
 import { VERDICTS } from '@/types/verdict';
 
 function CFUserBadge({ user }: { user: CFUserInfo }) {
+  const isLGM = user.rating >= 3000;
   return (
-    <div className="flex items-center justify-center gap-3 mb-6">
+    <div className="flex items-center justify-center gap-3 mb-6 flex-wrap">
       <span
-        className="text-2xl font-bold"
-        style={{ color: user.color }}
+        className={cn(
+          "text-2xl font-bold",
+          isLGM && "px-2 py-0.5 rounded"
+        )}
+        style={{
+          color: user.color,
+          backgroundColor: isLGM ? '#000' : 'transparent',
+        }}
       >
         {user.handle}
       </span>
@@ -21,12 +28,17 @@ function CFUserBadge({ user }: { user: CFUserInfo }) {
         style={{
           color: user.color,
           border: `1px solid ${user.color}`,
-          backgroundColor: user.rating >= 3000 ? '#000' : 'transparent',
+          backgroundColor: isLGM ? '#000' : 'transparent',
         }}
       >
         Rating: {user.rating}
       </span>
-      <span className="text-sm text-gray-400">{user.rank}</span>
+      <span
+        className="text-sm font-medium"
+        style={{ color: user.color }}
+      >
+        {user.rank}
+      </span>
     </div>
   );
 }
@@ -55,7 +67,7 @@ export function VerdictPredictor() {
   return (
     <div className="min-h-screen flex flex-col" style={{ backgroundColor: '#0f172a' }}>
       {/* Sticky Header */}
-      <div className="flex-1 flex flex-col max-w-4xl w-full mx-auto px-4 py-8">
+      <div className="flex-1 flex flex-col w-full mx-auto px-4 sm:px-8 lg:px-16 py-8">
 
         {/* Title */}
         <div className="text-center mb-8">
@@ -83,7 +95,7 @@ export function VerdictPredictor() {
             value={inputValue}
             onChange={e => setInputValue(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && handleCFSubmit()}
-            className="w-64 bg-[#1a1f3a] border-[#2a2f4a] text-white placeholder:text-gray-500"
+            className="w-80 bg-[#1a1f3a] border-[#2a2f4a] text-white placeholder:text-gray-500"
           />
           <Button
             onClick={handleCFSubmit}

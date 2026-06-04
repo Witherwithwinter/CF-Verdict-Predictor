@@ -11,13 +11,13 @@ export type CFUserInfo = {
 
 // Base weights (higher = more likely)
 const BASE_WEIGHTS: Record<string, number> = {
-  'AC': 15,
-  'WA': 35,
-  'TLE': 20,
-  'MLE': 8,
-  'RE': 12,
-  'CE': 5,
-  'ILE': 1,
+  'AC': 40,
+  'WA': 30,
+  'TLE': 15,
+  'MLE': 5,
+  'RE': 6,
+  'CE': 3,
+  'ILE': 0.5,
   'SKIPPED': 0.5,
 };
 
@@ -51,36 +51,89 @@ function getAdjustedWeights(rating: number | null): Record<string, number> {
 
   if (rating === null) return weights;
 
-  // AC probability increases with rating
-  // WA probability decreases with rating
+  // AC probability increases significantly with rating
+  // WA/TLE probability decreases with rating
   if (rating < 1200) {
-    weights['AC'] = 8;
-    weights['WA'] = 45;
-    weights['TLE'] = 25;
-  } else if (rating < 1400) {
-    weights['AC'] = 12;
-    weights['WA'] = 38;
-    weights['TLE'] = 22;
-  } else if (rating < 1600) {
-    weights['AC'] = 18;
-    weights['WA'] = 30;
+    weights['AC'] = 30;
+    weights['WA'] = 40;
     weights['TLE'] = 18;
-  } else if (rating < 1900) {
-    weights['AC'] = 25;
-    weights['WA'] = 25;
-    weights['TLE'] = 15;
-  } else if (rating < 2100) {
-    weights['AC'] = 35;
-    weights['WA'] = 20;
-    weights['TLE'] = 12;
-  } else if (rating < 2400) {
+    weights['MLE'] = 6;
+    weights['RE'] = 4;
+    weights['CE'] = 1.5;
+    weights['ILE'] = 0.3;
+    weights['SKIPPED'] = 0.2;
+  } else if (rating < 1400) {
     weights['AC'] = 45;
-    weights['WA'] = 15;
-    weights['TLE'] = 10;
-  } else {
+    weights['WA'] = 32;
+    weights['TLE'] = 14;
+    weights['MLE'] = 4;
+    weights['RE'] = 3;
+    weights['CE'] = 1.5;
+    weights['ILE'] = 0.3;
+    weights['SKIPPED'] = 0.2;
+  } else if (rating < 1600) {
     weights['AC'] = 55;
-    weights['WA'] = 12;
+    weights['WA'] = 25;
+    weights['TLE'] = 11;
+    weights['MLE'] = 3.5;
+    weights['RE'] = 3;
+    weights['CE'] = 1.5;
+    weights['ILE'] = 0.5;
+    weights['SKIPPED'] = 0.5;
+  } else if (rating < 1900) {
+    weights['AC'] = 65;
+    weights['WA'] = 18;
     weights['TLE'] = 8;
+    weights['MLE'] = 3;
+    weights['RE'] = 3;
+    weights['CE'] = 2;
+    weights['ILE'] = 0.5;
+    weights['SKIPPED'] = 0.5;
+  } else if (rating < 2100) {
+    weights['AC'] = 75;
+    weights['WA'] = 12;
+    weights['TLE'] = 6;
+    weights['MLE'] = 2.5;
+    weights['RE'] = 2.5;
+    weights['CE'] = 1.5;
+    weights['ILE'] = 0.3;
+    weights['SKIPPED'] = 0.2;
+  } else if (rating < 2300) {
+    weights['AC'] = 82;
+    weights['WA'] = 8;
+    weights['TLE'] = 5;
+    weights['MLE'] = 2;
+    weights['RE'] = 2;
+    weights['CE'] = 0.8;
+    weights['ILE'] = 0.1;
+    weights['SKIPPED'] = 0.1;
+  } else if (rating < 2400) {
+    weights['AC'] = 87;
+    weights['WA'] = 6;
+    weights['TLE'] = 4;
+    weights['MLE'] = 1.5;
+    weights['RE'] = 1;
+    weights['CE'] = 0.3;
+    weights['ILE'] = 0.1;
+    weights['SKIPPED'] = 0.1;
+  } else if (rating < 3000) {
+    weights['AC'] = 92;
+    weights['WA'] = 4;
+    weights['TLE'] = 2.5;
+    weights['MLE'] = 0.8;
+    weights['RE'] = 0.5;
+    weights['CE'] = 0.1;
+    weights['ILE'] = 0.05;
+    weights['SKIPPED'] = 0.05;
+  } else {
+    weights['AC'] = 96;
+    weights['WA'] = 2;
+    weights['TLE'] = 1;
+    weights['MLE'] = 0.5;
+    weights['RE'] = 0.3;
+    weights['CE'] = 0.1;
+    weights['ILE'] = 0.05;
+    weights['SKIPPED'] = 0.05;
   }
 
   return weights;
