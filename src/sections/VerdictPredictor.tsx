@@ -81,20 +81,27 @@ function getFunMessage(verdictId: string): string {
 function CFUserBadge({ user }: { user: CFUserInfo }) {
   const isLGM = user.rating >= 3000;
   return (
-    <div className="flex items-center justify-center gap-3 mb-6 flex-wrap">
+    <div className="flex items-center justify-center gap-4 mb-8 flex-wrap">
       {/* Avatar */}
-      <img
-        src={user.avatar}
-        alt={user.handle}
-        className="w-14 h-14 rounded-full border-2 shrink-0"
-        style={{ borderColor: user.color }}
-        onError={e => {
-          (e.target as HTMLImageElement).src = 'https://userpic.codeforces.org/no-title.jpg';
+      <div
+        className="shrink-0 rounded-full p-0.5"
+        style={{
+          background: `linear-gradient(135deg, ${user.color}, ${user.color}88)`,
+          boxShadow: `0 4px 16px ${user.color}33`,
         }}
-      />
+      >
+        <img
+          src={user.avatar}
+          alt={user.handle}
+          className="w-14 h-14 rounded-full bg-white"
+          onError={e => {
+            (e.target as HTMLImageElement).src = 'https://userpic.codeforces.org/no-title.jpg';
+          }}
+        />
+      </div>
 
       {/* Handle + Rating + Rank */}
-      <div className="flex items-center gap-3 flex-wrap">
+      <div className="flex items-center gap-3 flex-wrap items-center">
         {/* Handle — LGM: first char black, rest red */}
         <span className="text-2xl font-bold" style={{ fontFamily: 'monospace' }}>
           {isLGM ? (
@@ -110,7 +117,11 @@ function CFUserBadge({ user }: { user: CFUserInfo }) {
         {/* Rating pill */}
         <span
           className="text-base px-3 py-0.5 rounded-full font-semibold"
-          style={{ color: user.color, border: `1px solid ${user.color}` }}
+          style={{
+            color: user.color,
+            border: `1.5px solid ${user.color}`,
+            background: `${user.color}0d`,
+          }}
         >
           {user.rating}
         </span>
@@ -159,21 +170,24 @@ export function VerdictPredictor() {
   }, [lastPredicted]);
 
   return (
-    <div className="min-h-screen flex flex-col" style={{ backgroundColor: '#0f172a' }}>
-      {/* 
-        Full-width layout:
-        - Mobile:  px-4 (16px) on each side
-        - Tablet:  px-6 (24px)
-        - Desktop: px-8 (32px) — no max-width, truly fullscreen
-      */}
+    <div className="min-h-screen flex flex-col" style={{ backgroundColor: '#f8fafc' }}>
+
+      {/* Subtle top gradient line for 3D feel */}
+      <div
+        className="h-1 w-full"
+        style={{
+          background: 'linear-gradient(to right, #3b82f6, #8b5cf6, #3b82f6)',
+        }}
+      />
+
       <div className="flex-1 flex flex-col w-full px-4 sm:px-6 lg:px-8 py-6 sm:py-10">
 
         {/* ===== Title ===== */}
         <div className="text-center mb-8">
           <h1
-            className="text-4xl sm:text-5xl font-bold mb-2"
+            className="text-4xl sm:text-5xl font-bold mb-2 tracking-tight"
             style={{
-              background: 'linear-gradient(to right, #60a5fa, #a78bfa)',
+              background: 'linear-gradient(135deg, #1e3a5f, #3b82f6, #7c3aed)',
               WebkitBackgroundClip: 'text',
               WebkitTextFillColor: 'transparent',
               backgroundClip: 'text',
@@ -181,7 +195,7 @@ export function VerdictPredictor() {
           >
             Verdict Predictor
           </h1>
-          <p className="text-gray-400 text-sm sm:text-base">
+          <p className="text-slate-400 text-sm sm:text-base">
             Predict your next submission verdict on Codeforces
           </p>
         </div>
@@ -194,19 +208,20 @@ export function VerdictPredictor() {
             value={inputValue}
             onChange={e => setInputValue(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && handleCFSubmit()}
-            className="w-72 sm:w-80 bg-[#1a1f3a] border-[#2a2f4a] text-white placeholder:text-gray-500"
+            className="w-72 sm:w-80 border-slate-200 bg-white text-slate-900 placeholder:text-slate-400 shadow-sm focus:shadow-md transition-shadow"
+            style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}
           />
           <Button
             onClick={handleCFSubmit}
             disabled={isLoadingCF || !inputValue.trim()}
             size="sm"
-            className="bg-blue-600 hover:bg-blue-700 text-white"
+            className="bg-blue-600 hover:bg-blue-700 text-white shadow-sm hover:shadow-md transition-shadow"
           >
             {isLoadingCF ? '...' : 'OK'}
           </Button>
         </div>
         {cfError && (
-          <p className="text-center text-red-400 text-sm mb-4">{cfError}</p>
+          <p className="text-center text-red-500 text-sm mb-4">{cfError}</p>
         )}
 
         {/* ===== CF User Badge ===== */}
@@ -218,26 +233,30 @@ export function VerdictPredictor() {
             onClick={handlePredict}
             disabled={isPredicting}
             className={cn(
-              "text-lg sm:text-xl px-10 sm:px-16 py-5 sm:py-6 font-bold rounded-xl transition-all duration-300",
+              "text-lg sm:text-xl px-10 sm:px-16 py-5 sm:py-6 font-bold rounded-2xl transition-all duration-300",
               "disabled:opacity-50 disabled:cursor-not-allowed",
-              isPredicting ? "cursor-not-allowed opacity-50" : "cursor-pointer"
+              isPredicting ? "cursor-not-allowed opacity-50" : "cursor-pointer hover:scale-[1.03] active:scale-[0.98]"
             )}
             style={{
               background: isPredicting
-                ? 'linear-gradient(to right, #2563eb, #7c3aed)'
-                : 'linear-gradient(to right, #3b82f6, #8b5cf6)',
-              boxShadow: '0 0 30px rgba(59, 130, 246, 0.5)',
+                ? 'linear-gradient(135deg, #2563eb, #7c3aed)'
+                : 'linear-gradient(135deg, #3b82f6, #8b5cf6)',
+              boxShadow: isPredicting
+                ? '0 4px 20px rgba(59, 130, 246, 0.3)'
+                : '0 6px 28px rgba(59, 130, 246, 0.35), 0 2px 8px rgba(0,0,0,0.08)',
               color: 'white',
               border: 'none',
             }}
             onMouseEnter={e => {
               if (!isPredicting) {
-                e.currentTarget.style.boxShadow = '0 0 40px rgba(59, 130, 246, 0.7)';
+                (e.currentTarget as HTMLElement).style.boxShadow =
+                  '0 8px 36px rgba(59, 130, 246, 0.45), 0 2px 8px rgba(0,0,0,0.10)';
               }
             }}
             onMouseLeave={e => {
               if (!isPredicting) {
-                e.currentTarget.style.boxShadow = '0 0 30px rgba(59, 130, 246, 0.5)';
+                (e.currentTarget as HTMLElement).style.boxShadow =
+                  '0 6px 28px rgba(59, 130, 246, 0.35), 0 2px 8px rgba(0,0,0,0.08)';
               }
             }}
           >
@@ -258,15 +277,15 @@ export function VerdictPredictor() {
         {/* ===== Last Predicted Highlight ===== */}
         {lastPredicted && !isPredicting && (
           <div className="mb-8 w-full">
-            {/* 
-              Full-width card on all screens.
-              Centered text, no max-width cap.
-            */}
             <div
-              className="rounded-lg p-6 sm:p-8 w-full"
-              style={{ backgroundColor: '#1a1f3a', border: '1px solid #2a2f4a' }}
+              className="rounded-2xl p-6 sm:p-8 w-full"
+              style={{
+                backgroundColor: '#fff',
+                border: '1px solid #e2e8f0',
+                boxShadow: '0 4px 24px rgba(0,0,0,0.06), 0 1px 4px rgba(0,0,0,0.04)',
+              }}
             >
-              <p className="text-gray-400 mb-2 text-center text-sm sm:text-base">
+              <p className="text-slate-400 mb-2 text-center text-sm sm:text-base">
                 Most Likely Verdict:
               </p>
               <div
@@ -282,7 +301,7 @@ export function VerdictPredictor() {
                 {lastPredicted.probability}%
               </p>
               {funMessage && (
-                <p className="text-gray-300 text-sm italic text-center">
+                <p className="text-slate-500 text-sm italic text-center">
                   &ldquo;{funMessage}&rdquo;
                 </p>
               )}
@@ -293,12 +312,16 @@ export function VerdictPredictor() {
         {/* ===== Predictions List ===== */}
         {predictions.length > 0 && !isPredicting && (
           <div
-            className="rounded-lg overflow-hidden w-full"
-            style={{ backgroundColor: '#1a1f3a', border: '1px solid #2a2f4a' }}
+            className="rounded-2xl overflow-hidden w-full"
+            style={{
+              backgroundColor: '#fff',
+              border: '1px solid #e2e8f0',
+              boxShadow: '0 4px 24px rgba(0,0,0,0.06), 0 1px 4px rgba(0,0,0,0.04)',
+            }}
           >
             {/* Header */}
-            <div className="p-4 sm:p-6 border-b border-[#2a2f4a]">
-              <h2 className="text-xl sm:text-2xl font-bold text-center text-gray-200">
+            <div className="p-4 sm:p-6 border-b border-slate-100">
+              <h2 className="text-xl sm:text-2xl font-bold text-center text-slate-700">
                 Verdict Probabilities
               </h2>
             </div>
@@ -309,11 +332,11 @@ export function VerdictPredictor() {
                 <div
                   key={pred.verdict.id}
                   className={cn(
-                    "p-4 rounded-lg transition-all",
-                    index === 0 && "ring-2 ring-blue-500/50"
+                    "p-4 rounded-xl transition-all",
+                    index === 0 && "ring-2 ring-blue-200 bg-blue-50/50"
                   )}
                   style={{
-                    backgroundColor: index === 0 ? '#2a2f4a' : 'transparent',
+                    backgroundColor: index === 0 ? '#eff6ff' : 'transparent',
                   }}
                 >
                   <div className="flex items-center justify-between mb-3">
@@ -326,7 +349,7 @@ export function VerdictPredictor() {
                         >
                           {pred.verdict.fullName}
                         </p>
-                        <p className="text-xs sm:text-sm text-gray-500">{pred.verdict.id}</p>
+                        <p className="text-xs sm:text-sm text-slate-400">{pred.verdict.id}</p>
                       </div>
                     </div>
                     <div className="text-right shrink-0 ml-4">
@@ -340,15 +363,15 @@ export function VerdictPredictor() {
                   </div>
                   {/* Progress Bar */}
                   <div
-                    className="h-3 rounded-full overflow-hidden"
-                    style={{ backgroundColor: '#0a0e27' }}
+                    className="h-2.5 rounded-full overflow-hidden"
+                    style={{ backgroundColor: '#f1f5f9' }}
                   >
                     <div
                       className="h-full rounded-full transition-all duration-500 ease-out"
                       style={{
                         backgroundColor: pred.verdict.color,
                         width: `${pred.probability}%`,
-                        opacity: 0.8,
+                        boxShadow: `0 0 8px ${pred.verdict.color}66`,
                       }}
                     />
                   </div>
@@ -359,7 +382,7 @@ export function VerdictPredictor() {
         )}
 
         {/* ===== Footer ===== */}
-        <div className="mt-12 text-center text-gray-600 text-xs sm:text-sm">
+        <div className="mt-12 text-center text-slate-400 text-xs sm:text-sm">
           <p>This is just for fun! Don&apos;t take it seriously 😄</p>
           <p className="mt-1">Inspired by Codeforces verdict system</p>
         </div>
