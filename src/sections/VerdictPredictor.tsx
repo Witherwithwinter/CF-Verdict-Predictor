@@ -1,44 +1,125 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import type { CFUserInfo } from '@/hooks/useVerdictPredictor';
 import { useVerdictPredictor } from '@/hooks/useVerdictPredictor';
 import { cn } from '@/lib/utils';
-import { VERDICTS } from '@/types/verdict';
+
+const FUN_MESSAGES: Record<string, string[]> = {
+  'AC': [
+    '快去刷题，一发AC！',
+    '今天手感火热，直接拿下！',
+    '这波稳了，提交就过！',
+    '绿色 verdict 正在向你招手~',
+    '自信即巅峰，AC 在等你！',
+    '这波代码无懈可击！',
+    '提交前记得深呼吸，AC 稳了！',
+  ],
+  'WA': [
+    '再检查一遍边界条件？',
+    '也许只是少了一个等号...',
+    '样例过了不代表全对哦',
+    'debug 时间到！',
+    'printf 调试法启动！',
+    '也许是输出格式的问题？',
+    '别慌，WA 是通往 AC 的必经之路',
+  ],
+  'TLE': [
+    '复杂度是不是有点高了？',
+    '试试换个算法思路？',
+    '预处理一下可能会快很多',
+    '卡常数也是一种艺术',
+    '快读快写安排上！',
+    'O(n²) 在向你招手... 不，是 O(n log n)',
+    '也许可以剪枝？',
+  ],
+  'MLE': [
+    '数组是不是开太大了？',
+    '试试滚动数组？',
+    '内存限制不是摆设啊喂',
+    'vector 的 reserve 了解一下',
+    '也许可以用 bitset 压缩？',
+    '空间换时间，但空间不够了...',
+  ],
+  'RE': [
+    '数组越界了吧？',
+    '空指针？野指针？',
+    '递归栈溢出了？',
+    '除以零了？',
+    '检查一下数组下标从 0 还是从 1 开始',
+    'STL 的 empty() 检查了吗？',
+    '也许是递归终止条件的问题？',
+  ],
+  'CE': [
+    '少了个分号？',
+    '头文件漏了？',
+    '变量名拼写错了？',
+    'STL 的模板参数加了吗？',
+    'using namespace std; 呢？',
+    '编译器版本对吗？',
+    '也许是中文标点的问题？',
+  ],
+  'ILE': [
+    '读入挂了吗？',
+    '交互题格式对吗？',
+    'flush 了吗？',
+    '也许是用 cin 没用 ios::sync_with_stdio(false)？',
+  ],
+  'SKIPPED': [
+    '这题被你跳过了？',
+    '不如换个题目试试？',
+    '有时候跳过也是一种策略',
+  ],
+};
+
+function getFunMessage(verdictId: string): string {
+  const messages = FUN_MESSAGES[verdictId] || ['Good luck!'];
+  return messages[Math.floor(Math.random() * messages.length)];
+}
 
 function CFUserBadge({ user }: { user: CFUserInfo }) {
   const isLGM = user.rating >= 3000;
   return (
-    <div className="flex items-center justify-center gap-3 mb-6 flex-wrap">
-      <span
-        className={cn(
-          "text-2xl font-bold",
-          isLGM && "px-2 py-0.5 rounded"
-        )}
-        style={{
-          color: user.color,
-          backgroundColor: isLGM ? '#000' : 'transparent',
+    <div className="flex items-center justify-center gap-4 mb-6 flex-wrap">
+      <img
+        src={user.avatar}
+        alt={user.handle}
+        className="w-16 h-16 rounded-full border-2"
+        style={{ borderColor: user.color }}
+        onError={e => {
+          (e.target as HTMLImageElement).src = 'https://userpic.codeforces.org/no-title.jpg';
         }}
-      >
-        {user.handle}
-      </span>
-      <span
-        className="text-lg px-3 py-1 rounded-full font-semibold"
-        style={{
-          color: user.color,
-          border: `1px solid ${user.color}`,
-          backgroundColor: isLGM ? '#000' : 'transparent',
-        }}
-      >
-        Rating: {user.rating}
-      </span>
-      <span
-        className="text-sm font-medium"
-        style={{ color: user.color }}
-      >
-        {user.rank}
-      </span>
+      />
+      <div className="flex items-center gap-3 flex-wrap">
+        <span
+          className={cn(
+            "text-2xl font-bold",
+            isLGM && "px-2 py-0.5 rounded"
+          )}
+          style={{
+            color: user.color,
+            backgroundColor: isLGM ? '#000' : 'transparent',
+          }}
+        >
+          {user.handle}
+        </span>
+        <span
+          className="text-lg px-3 py-1 rounded-full font-semibold"
+          style={{
+            color: user.color,
+            border: `1px solid ${user.color}`,
+            backgroundColor: isLGM ? '#000' : 'transparent',
+          }}
+        >
+          {user.rating}
+        </span>
+        <span
+          className="text-sm font-medium"
+          style={{ color: user.color }}
+        >
+          {user.rank}
+        </span>
+      </div>
     </div>
   );
 }
@@ -58,16 +139,27 @@ export function VerdictPredictor() {
   } = useVerdictPredictor();
 
   const [inputValue, setInputValue] = useState('');
+  const [funMessage, setFunMessage] = useState('');
 
   const handleCFSubmit = () => {
     setCFHandle(inputValue);
     fetchCFUser(inputValue);
   };
 
+  const handlePredict = () => {
+    generatePredictions();
+  };
+
+  // Update fun message when lastPredicted changes
+  useEffect(() => {
+    if (lastPredicted) {
+      setFunMessage(getFunMessage(lastPredicted.verdict.id));
+    }
+  }, [lastPredicted]);
+
   return (
     <div className="min-h-screen flex flex-col" style={{ backgroundColor: '#0f172a' }}>
-      {/* Sticky Header */}
-      <div className="flex-1 flex flex-col w-full mx-auto px-4 sm:px-8 lg:px-16 py-8">
+      <div className="flex-1 flex flex-col w-full max-w-6xl mx-auto px-6 sm:px-12 lg:px-16 py-8">
 
         {/* Title */}
         <div className="text-center mb-8">
@@ -116,7 +208,7 @@ export function VerdictPredictor() {
         {/* Predict Button */}
         <div className="flex justify-center mb-10">
           <button
-            onClick={generatePredictions}
+            onClick={handlePredict}
             disabled={isPredicting}
             className={cn(
               "text-xl px-12 py-6 font-bold rounded-xl transition-all duration-300",
@@ -160,7 +252,7 @@ export function VerdictPredictor() {
         {lastPredicted && !isPredicting && (
           <div className="mb-8 text-center">
             <div
-              className="inline-block min-w-[300px] rounded-lg p-6"
+              className="rounded-lg p-6 max-w-2xl mx-auto"
               style={{ backgroundColor: '#1a1f3a', border: '1px solid #2a2f4a' }}
             >
               <p className="text-gray-400 mb-2">Most Likely Verdict:</p>
@@ -171,11 +263,16 @@ export function VerdictPredictor() {
                 {lastPredicted.verdict.icon} {lastPredicted.verdict.fullName}
               </div>
               <p
-                className="text-2xl font-semibold"
+                className="text-2xl font-semibold mb-3"
                 style={{ color: lastPredicted.verdict.color }}
               >
                 {lastPredicted.probability}%
               </p>
+              {funMessage && (
+                <p className="text-gray-300 text-sm italic">
+                  "{funMessage}"
+                </p>
+              )}
             </div>
           </div>
         )}
@@ -183,7 +280,7 @@ export function VerdictPredictor() {
         {/* Predictions List */}
         {predictions.length > 0 && !isPredicting && (
           <div
-            className="rounded-lg overflow-hidden"
+            className="rounded-lg overflow-hidden w-full"
             style={{ backgroundColor: '#1a1f3a', border: '1px solid #2a2f4a' }}
           >
             <div className="p-6 border-b border-[#2a2f4a]">
@@ -247,7 +344,7 @@ export function VerdictPredictor() {
 
         {/* Footer */}
         <div className="mt-12 text-center text-gray-600 text-sm">
-          <p>🎯 This is just for fun! Don't take it seriously 😄</p>
+          <p>This is just for fun! Don't take it seriously 😄</p>
           <p className="mt-1">Inspired by Codeforces verdict system</p>
         </div>
 

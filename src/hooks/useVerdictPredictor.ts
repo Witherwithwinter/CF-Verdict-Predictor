@@ -7,6 +7,7 @@ export type CFUserInfo = {
   rating: number;
   rank: string;
   color: string;
+  avatar: string;
 };
 
 // Base weights (higher = more likely)
@@ -175,6 +176,7 @@ export function useVerdictPredictor() {
           rating,
           rank: user.rank || getRatingTitle(rating),
           color: getRatingColor(rating),
+          avatar: user.avatar || `https://userpic.codeforces.org/no-title.jpg`,
         });
         setCFError('');
       } else {
@@ -200,7 +202,8 @@ export function useVerdictPredictor() {
       let rawProbs: number[] = [];
       VERDICTS.forEach((verdict: Verdict) => {
         const weight = weights[verdict.id] || 1;
-        const randomFactor = 0.5 + Math.random(); // 0.5 - 1.5
+        // Very small randomness so weights dominate
+        const randomFactor = 0.95 + Math.random() * 0.1; // 0.95 - 1.05
         rawProbs.push(weight * randomFactor);
       });
 
