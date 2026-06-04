@@ -79,6 +79,7 @@ function getFunMessage(verdictId: string): string {
 
 function CFUserBadge({ user }: { user: CFUserInfo }) {
   const isLGM = user.rating >= 3000;
+  const isIM = user.rating >= 2600;
   return (
     <div className="flex items-center justify-center gap-4 mb-6 flex-wrap">
       <img
@@ -90,18 +91,25 @@ function CFUserBadge({ user }: { user: CFUserInfo }) {
           (e.target as HTMLImageElement).src = 'https://userpic.codeforces.org/no-title.jpg';
         }}
       />
-      <div className="flex items-center gap-3 flex-wrap">
+      <div className="flex items-center gap-3 flex-wrap items-center">
         <span
-          className={cn(
-            "text-2xl font-bold",
-            isLGM && "px-2 py-0.5 rounded"
-          )}
+          className="text-2xl font-bold px-2 py-0.5 rounded"
           style={{
-            color: user.color,
             backgroundColor: isLGM ? '#000' : 'transparent',
+            color: isLGM ? '#FF0000' : user.color,
+            fontFamily: 'monospace',
+            letterSpacing: '0.5px',
           }}
         >
-          {user.handle}
+          {isLGM ? (
+            /* LGM: first char rendered with black color on black bg = "invisible" effect */
+            <>
+              <span style={{ color: '#000', marginRight: '-0.05em' }}>{user.handle[0]}</span>
+              <span style={{ color: '#FF0000' }}>{user.handle.slice(1)}</span>
+            </>
+          ) : (
+            <span style={{ color: user.color }}>{user.handle}</span>
+          )}
         </span>
         <span
           className="text-lg px-3 py-1 rounded-full font-semibold"
@@ -159,7 +167,7 @@ export function VerdictPredictor() {
 
   return (
     <div className="min-h-screen flex flex-col" style={{ backgroundColor: '#0f172a' }}>
-      <div className="flex-1 flex flex-col w-full max-w-6xl mx-auto px-6 sm:px-12 lg:px-16 py-8">
+      <div className="flex-1 flex flex-col w-full max-w-none px-4 sm:px-10 lg:px-32 py-8">
 
         {/* Title */}
         <div className="text-center mb-8">
