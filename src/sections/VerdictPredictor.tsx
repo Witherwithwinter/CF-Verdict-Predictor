@@ -54,7 +54,7 @@ function CFUserBadge({ user }: { user: CFUserInfo }) {
 }
 
 /* ──────────────────────────────────────
-   Verdict Chip colors & labels
+   Verdict short labels
 ────────────────────────────────────── */
 const VERDICT_SHORT: Record<string, string> = {
   AC: 'AC', WA: 'WA', TLE: 'TLE', MLE: 'MLE',
@@ -62,38 +62,100 @@ const VERDICT_SHORT: Record<string, string> = {
 };
 
 /* ──────────────────────────────────────
-   Physics Scene using Matter.js
-   (canvas layer + labels rendered on top via absolute divs)
+   Physics Scene — canvas-based, draggable
 ────────────────────────────────────── */
 interface PhysicsProps {
   predictions: VerdictPrediction[];
   onSettled: () => void;
 }
 
-const CHIP_W = 72;
-const CHIP_H = 36;
-const CHIP_R = 10; // corner radius (visual only)
+const CHIP_W = 80;
+const CHIP_H = 44;
+const CHIP_R = 12;
+const SCENE_H = 360;
 
 function PhysicsScene({ predictions, onSettled }: PhysicsProps) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const engineRef = useRef<Matter.Engine | null>(null);
-  const renderRef = useRef<Matter.Render | null>(null);
   const runnerRef = useRef<Matter.Runner | null>(null);
   const bodiesRef = useRef<{ body: Matter.Body; pred: VerdictPrediction }[]>([]);
+  const mouseConstraintRef = useRef<Matter.MouseConstraint | null>(null);
   const settledRef = useRef(false);
-  const [chipStates, setChipStates] = useState<{ x: number; y: number; angle: number; pred: VerdictPrediction }[]>([]);
+  const rafRef = useRef<number>(0);
 
-  const syncChips = useCallback(() => {
-    if (!bodiesRef.current.length) return;
-    setChipStates(
-      bodiesRef.current.map(({ body, pred }) => ({
-        x: body.position.x,
-        y: body.position.y,
-        angle: body.angle,
-        pred,
-      }))
-    );
+  const drawScene = useCallback(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    const W = canvas.width;
+    const H = canvas.height;
+    const dpr = window.devicePixelRatio || 1;
+
+    ctx.clearRect(0, 0, W * dpr, H * dpr);
+    ctx.save();
+    ctx.scale(dpr, dpr);
+
+    // Draw floor line
+    ctx.beginPath();
+    ctx.moveTo(0, H - 1);
+    ctx.lineTo(W, H - 1);
+    ctx.strokeStyle = '#e2e8f0';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    // Draw each chip
+    for (const { body, pred } of bodiesRef.current) {
+      const { x, y } = body.position;
+      const angle = body.angle;
+      const color = pred.verdict.color;
+      const label = VERDICT_SHORT[pred.verdict.id] || pred.verdict.id;
+      const prob = `${pred.probability}%`;
+
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.rotate(angle);
+
+      // Shadow
+      ctx.shadowColor = `${color}44`;
+      ctx.shadowBlur = 10;
+      ctx.shadowOffsetY = 3;
+
+      // Background fill
+      const hw = CHIP_W / 2;
+      const hh = CHIP_H / 2;
+      ctx.beginPath();
+      ctx.roundRect(-hw, -hh, CHIP_W, CHIP_H, CHIP_R);
+      ctx.fillStyle = `${color}18`;
+      ctx.fill();
+
+      ctx.shadowColor = 'transparent';
+      ctx.shadowBlur = 0;
+      ctx.shadowOffsetY = 0;
+
+      // Border
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 2;
+      ctx.stroke();
+
+      // Label text
+      ctx.fillStyle = color;
+      ctx.font = `bold 13px 'Inter', system-ui, sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(label, 0, -7);
+
+      // Probability
+      ctx.font = `11px 'Inter', system-ui, sans-serif`;
+      ctx.globalAlpha = 0.8;
+      ctx.fillText(prob, 0, 9);
+      ctx.globalAlpha = 1;
+
+      ctx.restore();
+    }
+
+    ctx.restore();
   }, []);
 
   useEffect(() => {
@@ -102,59 +164,77 @@ function PhysicsScene({ predictions, onSettled }: PhysicsProps) {
     if (!wrap || !canvas || !predictions.length) return;
 
     const W = wrap.clientWidth || 600;
-    const H = 340;
-    canvas.width = W;
-    canvas.height = H;
+    const H = SCENE_H;
+    const dpr = window.devicePixelRatio || 1;
 
-    /* Engine */
+    // Set canvas size with DPR
+    canvas.width = W * dpr;
+    canvas.height = H * dpr;
+    canvas.style.width = `${W}px`;
+    canvas.style.height = `${H}px`;
+
+    // Engine
     const engine = Matter.Engine.create({ gravity: { x: 0, y: 2.2 } });
     engineRef.current = engine;
 
-    /* Walls: floor + left + right */
+    // Walls
     const floor = Matter.Bodies.rectangle(W / 2, H + 25, W + 100, 50, { isStatic: true, label: 'floor' });
-    const left  = Matter.Bodies.rectangle(-25, H / 2, 50, H * 2, { isStatic: true });
-    const right = Matter.Bodies.rectangle(W + 25, H / 2, 50, H * 2, { isStatic: true });
-    Matter.World.add(engine.world, [floor, left, right]);
+    const wallL = Matter.Bodies.rectangle(-25, H / 2, 50, H * 2, { isStatic: true });
+    const wallR = Matter.Bodies.rectangle(W + 25, H / 2, 50, H * 2, { isStatic: true });
+    Matter.World.add(engine.world, [floor, wallL, wallR]);
 
-    /* Drop chips one by one with stagger */
+    // Mouse constraint for drag
+    const mouse = Matter.Mouse.create(canvas);
+    // Fix mouse position for DPR
+    mouse.pixelRatio = dpr;
+    const mouseConstraint = Matter.MouseConstraint.create(engine, {
+      mouse,
+      constraint: {
+        stiffness: 0.2,
+        render: { visible: false },
+      },
+    });
+    Matter.World.add(engine.world, mouseConstraint);
+    mouseConstraintRef.current = mouseConstraint;
+
+    // Drop chips with stagger
     bodiesRef.current = [];
+    settledRef.current = false;
     predictions.forEach((pred, i) => {
       setTimeout(() => {
-        // random X, start above canvas
         const x = CHIP_W / 2 + 20 + Math.random() * (W - CHIP_W - 40);
-        const y = -CHIP_H - i * 5;
+        const y = -CHIP_H - i * 8;
         const body = Matter.Bodies.rectangle(x, y, CHIP_W, CHIP_H, {
           restitution: 0.45,
           friction: 0.25,
           frictionAir: 0.015,
-          angle: (Math.random() - 0.5) * 0.5,
+          angle: (Math.random() - 0.5) * 0.6,
           label: pred.verdict.id,
         });
         Matter.World.add(engine.world, body);
         bodiesRef.current.push({ body, pred });
-      }, i * 120);
+      }, i * 130);
     });
 
-    /* Runner */
+    // Runner
     const runner = Matter.Runner.create();
     runnerRef.current = runner;
     Matter.Runner.run(runner, engine);
 
-    /* RAF loop to sync chip positions */
-    let rafId: number;
+    // RAF draw loop + settle detection
     let stableCount = 0;
     const loop = () => {
-      syncChips();
-
-      // Check if all bodies are sleeping / nearly still
+      drawScene();
       if (bodiesRef.current.length === predictions.length && !settledRef.current) {
         const allStill = bodiesRef.current.every(({ body }) => {
           const spd = Math.sqrt(body.velocity.x ** 2 + body.velocity.y ** 2);
-          return spd < 0.3;
+          return spd < 0.25;
         });
-        if (allStill) {
+        // Don't count as settled if user is dragging
+        const isDragging = !!(mouseConstraintRef.current?.body);
+        if (allStill && !isDragging) {
           stableCount++;
-          if (stableCount > 18) {
+          if (stableCount > 22) {
             settledRef.current = true;
             onSettled();
           }
@@ -162,79 +242,43 @@ function PhysicsScene({ predictions, onSettled }: PhysicsProps) {
           stableCount = 0;
         }
       }
-
-      rafId = requestAnimationFrame(loop);
+      rafRef.current = requestAnimationFrame(loop);
     };
-    rafId = requestAnimationFrame(loop);
-
-    /* Render (transparent canvas, just for debug — hidden) */
-    const render = Matter.Render.create({
-      canvas,
-      engine,
-      options: {
-        width: W, height: H,
-        wireframes: false,
-        background: 'transparent',
-        pixelRatio: window.devicePixelRatio || 1,
-      },
-    });
-    renderRef.current = render;
-    // We don't run Matter.Render — we draw manually below
-    // Keep canvas hidden, we use CSS divs for chips
-    canvas.style.display = 'none';
+    rafRef.current = requestAnimationFrame(loop);
 
     return () => {
-      cancelAnimationFrame(rafId);
+      cancelAnimationFrame(rafRef.current);
       Matter.Runner.stop(runner);
       Matter.Engine.clear(engine);
       Matter.World.clear(engine.world, false);
       bodiesRef.current = [];
       settledRef.current = false;
     };
-  }, [predictions, syncChips, onSettled]);
+  }, [predictions, drawScene, onSettled]);
 
   return (
-    <div ref={wrapRef} className="relative w-full" style={{ height: 340, overflow: 'hidden' }}>
-      <canvas ref={canvasRef} />
-      {/* Chips rendered as absolute divs */}
-      {chipStates.map(({ x, y, angle, pred }) => (
-        <div
-          key={pred.verdict.id}
-          style={{
-            position: 'absolute',
-            left: x - CHIP_W / 2,
-            top: y - CHIP_H / 2,
-            width: CHIP_W,
-            height: CHIP_H,
-            borderRadius: CHIP_R,
-            transform: `rotate(${angle}rad)`,
-            backgroundColor: `${pred.verdict.color}18`,
-            border: `2px solid ${pred.verdict.color}`,
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            justifyContent: 'center',
-            boxShadow: `0 3px 12px ${pred.verdict.color}30`,
-            userSelect: 'none',
-            pointerEvents: 'none',
-          }}
-        >
-          <span style={{ fontSize: 11, fontWeight: 700, color: pred.verdict.color, lineHeight: 1.1 }}>
-            {VERDICT_SHORT[pred.verdict.id] || pred.verdict.id}
-          </span>
-          <span style={{ fontSize: 10, color: pred.verdict.color, opacity: 0.85 }}>
-            {pred.probability}%
-          </span>
-        </div>
-      ))}
-      {/* Floor label */}
-      <div className="absolute bottom-0 left-0 right-0 h-px" style={{ background: 'linear-gradient(to right, transparent, #e2e8f0, transparent)' }} />
+    <div
+      ref={wrapRef}
+      className="relative w-full"
+      style={{ height: SCENE_H, cursor: 'grab' }}
+    >
+      <canvas
+        ref={canvasRef}
+        style={{ display: 'block', width: '100%', height: SCENE_H, cursor: 'inherit' }}
+      />
+      {/* Hint */}
+      <div
+        className="absolute bottom-2 right-3 text-xs pointer-events-none select-none"
+        style={{ color: '#94a3b8', opacity: 0.7 }}
+      >
+        drag to play ↕
+      </div>
     </div>
   );
 }
 
 /* ──────────────────────────────────────
-   Progress bar row (shown after settle)
+   Progress bar row
 ────────────────────────────────────── */
 function ProbabilityBar({ pred, delay }: { pred: VerdictPrediction; delay: number }) {
   const [width, setWidth] = useState(0);
@@ -287,9 +331,9 @@ function ProbabilityBar({ pred, delay }: { pred: VerdictPrediction; delay: numbe
 }
 
 /* ──────────────────────────────────────
-   Inject global keyframes once
+   Global keyframes
 ────────────────────────────────────── */
-const STYLE_ID = 'vp-keyframes-v2';
+const STYLE_ID = 'vp-keyframes-v3';
 function ensureStyles() {
   if (document.getElementById(STYLE_ID)) return;
   const s = document.createElement('style');
@@ -329,7 +373,6 @@ export function VerdictPredictor() {
 
   useEffect(() => { ensureStyles(); }, []);
 
-  // Kick off physics when predictions arrive
   useEffect(() => {
     if (!isPredicting && predictions.length > 0 && lastPredicted) {
       setUIPhase('physics');
@@ -348,7 +391,6 @@ export function VerdictPredictor() {
   };
 
   const handlePhysicsSettled = useCallback(() => {
-    // After chips settle, show bar chart
     setUIPhase('bars');
     setTimeout(() => setUIPhase('done'), 2000);
   }, []);
@@ -428,11 +470,10 @@ export function VerdictPredictor() {
           >
             <div className="px-4 sm:px-6 pt-4 pb-2 border-b border-slate-100">
               <p className="text-sm text-slate-400 text-center">
-                {uiPhase === 'physics' ? '⚡ Simulating...' : '🎯 Results'}
+                {uiPhase === 'physics' ? '⚡ Simulating...' : '🎯 Results — drag to play!'}
               </p>
             </div>
 
-            {/* Physics drop zone */}
             <div className="px-2 sm:px-4 pt-4 pb-2">
               <PhysicsScene
                 predictions={predictions}
@@ -442,10 +483,9 @@ export function VerdictPredictor() {
           </div>
         )}
 
-        {/* ── WINNER CARD + BARS (after physics settles) ── */}
+        {/* ── WINNER CARD + BARS ── */}
         {(uiPhase === 'bars' || uiPhase === 'done') && lastPredicted && (
           <>
-            {/* Winner card */}
             <div className="mb-6 w-full vp-pop-in">
               <div
                 className="rounded-2xl p-5 sm:p-7 w-full"
@@ -469,7 +509,6 @@ export function VerdictPredictor() {
               </div>
             </div>
 
-            {/* Probability bars */}
             <div
               className="rounded-2xl w-full"
               style={{
