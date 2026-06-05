@@ -1,8 +1,10 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import Matter from 'matter-js';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import type { CFUserInfo } from '@/hooks/useVerdictPredictor';
 import { useVerdictPredictor } from '@/hooks/useVerdictPredictor';
+import type { VerdictPrediction } from '@/types/verdict';
 import { cn } from '@/lib/utils';
 
 /* ──────────────────────────────────────
@@ -24,50 +26,18 @@ function getFunMessage(id: string): string {
 }
 
 /* ──────────────────────────────────────
-   Inline keyframes injected once
-────────────────────────────────────── */
-const STYLE_ID = 'vp-keyframes';
-function ensureStyles() {
-  if (document.getElementById(STYLE_ID)) return;
-  const s = document.createElement('style');
-  s.id = STYLE_ID;
-  s.textContent = `
-    @keyframes vp-drop-in {
-      0%   { opacity: 0; transform: translateY(-28px) rotate(-1.5deg); }
-      55%  { opacity: 1; transform: translateY(6px)  rotate(0.8deg);  }
-      75%  { transform: translateY(-3px) rotate(-0.4deg); }
-      90%  { transform: translateY(2px)  rotate(0.2deg);  }
-      100% { opacity: 1; transform: translateY(0)    rotate(0deg);    }
-    }
-    @keyframes vp-reveal-pop {
-      0%   { opacity: 0; transform: scale(0.85) translateY(-18px); }
-      60%  { opacity: 1; transform: scale(1.04) translateY(2px);   }
-      80%  { transform: scale(0.98) translateY(0); }
-      100% { opacity: 1; transform: scale(1) translateY(0); }
-    }
-    .vp-drop-in {
-      animation: vp-drop-in 0.62s cubic-bezier(0.34,1.56,0.64,1) both;
-    }
-    .vp-reveal-pop {
-      animation: vp-reveal-pop 0.55s cubic-bezier(0.34,1.4,0.64,1) both;
-    }
-  `;
-  document.head.appendChild(s);
-}
-
-/* ──────────────────────────────────────
    CF User Badge
 ────────────────────────────────────── */
 function CFUserBadge({ user }: { user: CFUserInfo }) {
   const isLGM = user.rating >= 3000;
   return (
-    <div className="flex items-center justify-center gap-4 mb-8 flex-wrap">
+    <div className="flex items-center justify-center gap-4 mb-6 flex-wrap">
       <div className="shrink-0 rounded-full p-0.5"
         style={{ background: `linear-gradient(135deg, ${user.color}, ${user.color}88)`, boxShadow: `0 4px 16px ${user.color}33` }}>
         <img src={user.avatar} alt={user.handle} className="w-14 h-14 rounded-full bg-white"
           onError={e => { (e.target as HTMLImageElement).src = 'https://userpic.codeforces.org/no-title.jpg'; }} />
       </div>
-      <div className="flex items-center gap-3 flex-wrap items-center">
+      <div className="flex items-center gap-3 flex-wrap">
         <span className="text-2xl font-bold" style={{ fontFamily: 'monospace' }}>
           {isLGM
             ? <><span style={{ color: '#000' }}>{user.handle[0]}</span><span style={{ color: '#FF0000' }}>{user.handle.slice(1)}</span></>
@@ -84,111 +54,272 @@ function CFUserBadge({ user }: { user: CFUserInfo }) {
 }
 
 /* ──────────────────────────────────────
-   Animated progress bar item
+   Verdict Chip colors & labels
 ────────────────────────────────────── */
-type AnimPhase = 'scanning' | 'reveal' | 'done';
+const VERDICT_SHORT: Record<string, string> = {
+  AC: 'AC', WA: 'WA', TLE: 'TLE', MLE: 'MLE',
+  RE: 'RE', CE: 'CE', ILE: 'ILE', SKIPPED: 'SKIP',
+};
 
-function PredictionRow({
-  icon, fullName, id, color,
-  targetPct, phase, isFirst, dropIndex,
-}: {
-  icon: string; fullName: string; id: string; color: string;
-  targetPct: number; phase: AnimPhase; isFirst: boolean; dropIndex: number;
-}) {
-  const [barWidth, setBarWidth] = useState(0);
-  const [showNumber, setShowNumber] = useState(false);
-  const rafRef = useRef<number | null>(null);
-  const startRef = useRef<number | null>(null);
-  const SCAN_DURATION = 1200; // ms
+/* ──────────────────────────────────────
+   Physics Scene using Matter.js
+   (canvas layer + labels rendered on top via absolute divs)
+────────────────────────────────────── */
+interface PhysicsProps {
+  predictions: VerdictPrediction[];
+  onSettled: () => void;
+}
 
-  // Phase: scanning → animate bar 0 → targetPct
+const CHIP_W = 72;
+const CHIP_H = 36;
+const CHIP_R = 10; // corner radius (visual only)
+
+function PhysicsScene({ predictions, onSettled }: PhysicsProps) {
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const engineRef = useRef<Matter.Engine | null>(null);
+  const renderRef = useRef<Matter.Render | null>(null);
+  const runnerRef = useRef<Matter.Runner | null>(null);
+  const bodiesRef = useRef<{ body: Matter.Body; pred: VerdictPrediction }[]>([]);
+  const settledRef = useRef(false);
+  const [chipStates, setChipStates] = useState<{ x: number; y: number; angle: number; pred: VerdictPrediction }[]>([]);
+
+  const syncChips = useCallback(() => {
+    if (!bodiesRef.current.length) return;
+    setChipStates(
+      bodiesRef.current.map(({ body, pred }) => ({
+        x: body.position.x,
+        y: body.position.y,
+        angle: body.angle,
+        pred,
+      }))
+    );
+  }, []);
+
   useEffect(() => {
-    if (phase !== 'scanning') return;
-    setBarWidth(0);
-    setShowNumber(false);
-    startRef.current = null;
+    const wrap = wrapRef.current;
+    const canvas = canvasRef.current;
+    if (!wrap || !canvas || !predictions.length) return;
 
-    const tick = (now: number) => {
-      if (startRef.current === null) startRef.current = now;
-      const elapsed = now - startRef.current;
-      const progress = Math.min(elapsed / SCAN_DURATION, 1);
-      // ease-out cubic
-      const eased = 1 - Math.pow(1 - progress, 3);
-      setBarWidth(eased * targetPct);
-      if (progress < 1) {
-        rafRef.current = requestAnimationFrame(tick);
-      } else {
-        setBarWidth(targetPct);
+    const W = wrap.clientWidth || 600;
+    const H = 340;
+    canvas.width = W;
+    canvas.height = H;
+
+    /* Engine */
+    const engine = Matter.Engine.create({ gravity: { x: 0, y: 2.2 } });
+    engineRef.current = engine;
+
+    /* Walls: floor + left + right */
+    const floor = Matter.Bodies.rectangle(W / 2, H + 25, W + 100, 50, { isStatic: true, label: 'floor' });
+    const left  = Matter.Bodies.rectangle(-25, H / 2, 50, H * 2, { isStatic: true });
+    const right = Matter.Bodies.rectangle(W + 25, H / 2, 50, H * 2, { isStatic: true });
+    Matter.World.add(engine.world, [floor, left, right]);
+
+    /* Drop chips one by one with stagger */
+    bodiesRef.current = [];
+    predictions.forEach((pred, i) => {
+      setTimeout(() => {
+        // random X, start above canvas
+        const x = CHIP_W / 2 + 20 + Math.random() * (W - CHIP_W - 40);
+        const y = -CHIP_H - i * 5;
+        const body = Matter.Bodies.rectangle(x, y, CHIP_W, CHIP_H, {
+          restitution: 0.45,
+          friction: 0.25,
+          frictionAir: 0.015,
+          angle: (Math.random() - 0.5) * 0.5,
+          label: pred.verdict.id,
+        });
+        Matter.World.add(engine.world, body);
+        bodiesRef.current.push({ body, pred });
+      }, i * 120);
+    });
+
+    /* Runner */
+    const runner = Matter.Runner.create();
+    runnerRef.current = runner;
+    Matter.Runner.run(runner, engine);
+
+    /* RAF loop to sync chip positions */
+    let rafId: number;
+    let stableCount = 0;
+    const loop = () => {
+      syncChips();
+
+      // Check if all bodies are sleeping / nearly still
+      if (bodiesRef.current.length === predictions.length && !settledRef.current) {
+        const allStill = bodiesRef.current.every(({ body }) => {
+          const spd = Math.sqrt(body.velocity.x ** 2 + body.velocity.y ** 2);
+          return spd < 0.3;
+        });
+        if (allStill) {
+          stableCount++;
+          if (stableCount > 18) {
+            settledRef.current = true;
+            onSettled();
+          }
+        } else {
+          stableCount = 0;
+        }
       }
+
+      rafId = requestAnimationFrame(loop);
     };
-    rafRef.current = requestAnimationFrame(tick);
-    return () => { if (rafRef.current) cancelAnimationFrame(rafRef.current); };
-  }, [phase, targetPct]);
+    rafId = requestAnimationFrame(loop);
 
-  // Phase: reveal → show final number
-  useEffect(() => {
-    if (phase === 'reveal' || phase === 'done') setShowNumber(true);
-  }, [phase]);
+    /* Render (transparent canvas, just for debug — hidden) */
+    const render = Matter.Render.create({
+      canvas,
+      engine,
+      options: {
+        width: W, height: H,
+        wireframes: false,
+        background: 'transparent',
+        pixelRatio: window.devicePixelRatio || 1,
+      },
+    });
+    renderRef.current = render;
+    // We don't run Matter.Render — we draw manually below
+    // Keep canvas hidden, we use CSS divs for chips
+    canvas.style.display = 'none';
 
-  const isRevealPhase = phase === 'reveal' || phase === 'done';
+    return () => {
+      cancelAnimationFrame(rafId);
+      Matter.Runner.stop(runner);
+      Matter.Engine.clear(engine);
+      Matter.World.clear(engine.world, false);
+      bodiesRef.current = [];
+      settledRef.current = false;
+    };
+  }, [predictions, syncChips, onSettled]);
 
   return (
-    <div
-      className={cn(
-        'p-4 rounded-xl',
-        isRevealPhase && !isFirst && 'vp-drop-in',
-        isRevealPhase && isFirst && '',
-      )}
-      style={{
-        backgroundColor: isFirst && isRevealPhase ? '#eff6ff' : 'transparent',
-        outline: isFirst && isRevealPhase ? '2px solid #bfdbfe' : 'none',
-        // stagger drop for non-first items
-        animationDelay: isRevealPhase && !isFirst ? `${dropIndex * 70}ms` : '0ms',
-        // hide non-first items until reveal phase starts
-        opacity: phase === 'scanning' || isRevealPhase ? 1 : 0,
-      }}
-    >
-      <div className="flex items-center justify-between mb-3">
-        <div className="flex items-center gap-3 min-w-0">
-          <span className="text-2xl shrink-0">{icon}</span>
-          <div className="min-w-0">
-            <p className="font-semibold text-base sm:text-lg truncate" style={{ color }}>{fullName}</p>
-            <p className="text-xs sm:text-sm text-slate-400">{id}</p>
-          </div>
-        </div>
-        <div className="text-right shrink-0 ml-4">
-          <p className="text-xl sm:text-2xl font-bold transition-all duration-300" style={{ color }}>
-            {showNumber ? `${targetPct}%` : '—'}
-          </p>
-        </div>
-      </div>
-      {/* Progress bar */}
-      <div className="h-2.5 rounded-full overflow-hidden" style={{ backgroundColor: '#f1f5f9' }}>
+    <div ref={wrapRef} className="relative w-full" style={{ height: 340, overflow: 'hidden' }}>
+      <canvas ref={canvasRef} />
+      {/* Chips rendered as absolute divs */}
+      {chipStates.map(({ x, y, angle, pred }) => (
         <div
-          className="h-full rounded-full"
+          key={pred.verdict.id}
           style={{
-            backgroundColor: color,
-            width: `${barWidth}%`,
-            boxShadow: barWidth > 0 ? `0 0 8px ${color}66` : 'none',
-            transition: phase === 'scanning' ? 'none' : 'width 0.4s ease-out',
+            position: 'absolute',
+            left: x - CHIP_W / 2,
+            top: y - CHIP_H / 2,
+            width: CHIP_W,
+            height: CHIP_H,
+            borderRadius: CHIP_R,
+            transform: `rotate(${angle}rad)`,
+            backgroundColor: `${pred.verdict.color}18`,
+            border: `2px solid ${pred.verdict.color}`,
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            boxShadow: `0 3px 12px ${pred.verdict.color}30`,
+            userSelect: 'none',
+            pointerEvents: 'none',
           }}
-        />
-      </div>
+        >
+          <span style={{ fontSize: 11, fontWeight: 700, color: pred.verdict.color, lineHeight: 1.1 }}>
+            {VERDICT_SHORT[pred.verdict.id] || pred.verdict.id}
+          </span>
+          <span style={{ fontSize: 10, color: pred.verdict.color, opacity: 0.85 }}>
+            {pred.probability}%
+          </span>
+        </div>
+      ))}
+      {/* Floor label */}
+      <div className="absolute bottom-0 left-0 right-0 h-px" style={{ background: 'linear-gradient(to right, transparent, #e2e8f0, transparent)' }} />
     </div>
   );
 }
 
 /* ──────────────────────────────────────
+   Progress bar row (shown after settle)
+────────────────────────────────────── */
+function ProbabilityBar({ pred, delay }: { pred: VerdictPrediction; delay: number }) {
+  const [width, setWidth] = useState(0);
+  const startRef = useRef<number | null>(null);
+  const rafRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    const DURATION = 900;
+    startRef.current = null;
+    const tick = (now: number) => {
+      if (startRef.current === null) startRef.current = now;
+      const t = Math.min((now - startRef.current) / DURATION, 1);
+      const eased = 1 - Math.pow(1 - t, 3);
+      setWidth(eased * pred.probability);
+      if (t < 1) rafRef.current = requestAnimationFrame(tick);
+    };
+    const id = setTimeout(() => { rafRef.current = requestAnimationFrame(tick); }, delay);
+    return () => {
+      clearTimeout(id);
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    };
+  }, [pred.probability, delay]);
+
+  return (
+    <div
+      className="flex items-center gap-3 py-2"
+      style={{ opacity: 0, animation: `fadeSlideIn 0.4s ease forwards ${delay}ms` }}
+    >
+      <div className="flex items-center gap-2 w-28 shrink-0">
+        <span style={{ fontSize: 18 }}>{pred.verdict.icon}</span>
+        <span className="text-sm font-semibold truncate" style={{ color: pred.verdict.color }}>
+          {VERDICT_SHORT[pred.verdict.id] || pred.verdict.id}
+        </span>
+      </div>
+      <div className="flex-1 h-2 rounded-full overflow-hidden" style={{ background: '#f1f5f9' }}>
+        <div
+          className="h-full rounded-full transition-none"
+          style={{
+            width: `${width}%`,
+            backgroundColor: pred.verdict.color,
+            boxShadow: width > 0 ? `0 0 6px ${pred.verdict.color}66` : 'none',
+          }}
+        />
+      </div>
+      <span className="text-sm font-bold w-12 text-right shrink-0" style={{ color: pred.verdict.color }}>
+        {Math.round(width * 10) / 10}%
+      </span>
+    </div>
+  );
+}
+
+/* ──────────────────────────────────────
+   Inject global keyframes once
+────────────────────────────────────── */
+const STYLE_ID = 'vp-keyframes-v2';
+function ensureStyles() {
+  if (document.getElementById(STYLE_ID)) return;
+  const s = document.createElement('style');
+  s.id = STYLE_ID;
+  s.textContent = `
+    @keyframes fadeSlideIn {
+      from { opacity: 0; transform: translateX(-12px); }
+      to   { opacity: 1; transform: translateX(0); }
+    }
+    @keyframes vpPopIn {
+      0%   { opacity: 0; transform: scale(0.88) translateY(-16px); }
+      60%  { opacity: 1; transform: scale(1.03) translateY(2px);   }
+      80%  { transform: scale(0.98); }
+      100% { opacity: 1; transform: scale(1) translateY(0); }
+    }
+    .vp-pop-in { animation: vpPopIn 0.5s cubic-bezier(0.34,1.4,0.64,1) both; }
+  `;
+  document.head.appendChild(s);
+}
+
+/* ──────────────────────────────────────
    Main
 ────────────────────────────────────── */
-// animation state machine
-type UIPhase = 'idle' | 'scanning' | 'reveal' | 'done';
+type UIPhase = 'idle' | 'physics' | 'bars' | 'done';
 
 export function VerdictPredictor() {
   const {
     predictions, isPredicting, lastPredicted,
     generatePredictions,
-    cfUser, cfHandle, setCFHandle,
+    cfUser, setCFHandle,
     isLoadingCF, cfError, fetchCFUser,
   } = useVerdictPredictor();
 
@@ -198,18 +329,11 @@ export function VerdictPredictor() {
 
   useEffect(() => { ensureStyles(); }, []);
 
-  // When predictions arrive from hook (isPredicting flips false), kick off animation
+  // Kick off physics when predictions arrive
   useEffect(() => {
     if (!isPredicting && predictions.length > 0 && lastPredicted) {
-      // Phase 1: scanning — bars fill up
-      setUIPhase('scanning');
-      const scanDone = setTimeout(() => {
-        // Phase 2: reveal — winner pops up, others drop
-        setUIPhase('reveal');
-        setFunMessage(getFunMessage(lastPredicted.verdict.id));
-        setTimeout(() => setUIPhase('done'), 1200);
-      }, 1350); // slightly longer than bar animation
-      return () => clearTimeout(scanDone);
+      setUIPhase('physics');
+      setFunMessage(getFunMessage(lastPredicted.verdict.id));
     }
   }, [isPredicting, predictions, lastPredicted]);
 
@@ -223,15 +347,18 @@ export function VerdictPredictor() {
     generatePredictions();
   };
 
-  const showResults = uiPhase === 'scanning' || uiPhase === 'reveal' || uiPhase === 'done';
-  const showWinner = uiPhase === 'reveal' || uiPhase === 'done';
+  const handlePhysicsSettled = useCallback(() => {
+    // After chips settle, show bar chart
+    setUIPhase('bars');
+    setTimeout(() => setUIPhase('done'), 2000);
+  }, []);
 
   return (
     <div className="min-h-screen flex flex-col" style={{ backgroundColor: '#f8fafc' }}>
-      {/* Top accent line */}
-      <div className="h-1 w-full" style={{ background: 'linear-gradient(to right, #3b82f6, #8b5cf6, #3b82f6)' }} />
+      {/* Top accent */}
+      <div className="h-1 w-full" style={{ background: 'linear-gradient(to right, #3b82f6, #8b5cf6, #ec4899, #3b82f6)' }} />
 
-      <div className="flex-1 flex flex-col w-full px-4 sm:px-6 lg:px-8 py-6 sm:py-10">
+      <div className="flex-1 flex flex-col w-full px-4 sm:px-8 lg:px-16 py-6 sm:py-10">
 
         {/* Title */}
         <div className="text-center mb-8">
@@ -245,15 +372,20 @@ export function VerdictPredictor() {
         {/* CF Handle Input */}
         <div className="flex justify-center gap-2 mb-6 flex-wrap">
           <Input
-            type="text" placeholder="Enter your Codeforces handle..."
+            type="text"
+            placeholder="Enter your Codeforces handle..."
             value={inputValue}
             onChange={e => setInputValue(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && handleCFSubmit()}
-            className="w-72 sm:w-80 border-slate-200 bg-white text-slate-900 placeholder:text-slate-400 shadow-sm"
+            className="w-72 sm:w-80 border-slate-200 bg-white text-slate-900 placeholder:text-slate-400"
             style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}
           />
-          <Button onClick={handleCFSubmit} disabled={isLoadingCF || !inputValue.trim()} size="sm"
-            className="bg-blue-600 hover:bg-blue-700 text-white shadow-sm">
+          <Button
+            onClick={handleCFSubmit}
+            disabled={isLoadingCF || !inputValue.trim()}
+            size="sm"
+            className="bg-blue-600 hover:bg-blue-700 text-white"
+          >
             {isLoadingCF ? '...' : 'OK'}
           </Button>
         </div>
@@ -263,75 +395,103 @@ export function VerdictPredictor() {
         {cfUser && <CFUserBadge user={cfUser} />}
 
         {/* Predict Button */}
-        <div className="flex justify-center mb-10">
+        <div className="flex justify-center mb-8">
           <button
             onClick={handlePredict}
-            disabled={isPredicting || uiPhase === 'scanning'}
+            disabled={isPredicting || uiPhase === 'physics'}
             className={cn(
-              'text-lg sm:text-xl px-10 sm:px-16 py-5 sm:py-6 font-bold rounded-2xl transition-all duration-300',
+              'text-lg sm:text-xl px-10 sm:px-16 py-4 sm:py-5 font-bold rounded-2xl transition-all duration-300',
               'disabled:opacity-50 disabled:cursor-not-allowed',
-              !isPredicting && uiPhase !== 'scanning' && 'cursor-pointer hover:scale-[1.03] active:scale-[0.98]',
+              !(isPredicting || uiPhase === 'physics') && 'cursor-pointer hover:scale-[1.03] active:scale-[0.98]',
             )}
             style={{
               background: 'linear-gradient(135deg, #3b82f6, #8b5cf6)',
-              boxShadow: '0 6px 28px rgba(59, 130, 246, 0.35), 0 2px 8px rgba(0,0,0,0.08)',
+              boxShadow: '0 6px 28px rgba(59,130,246,0.35), 0 2px 8px rgba(0,0,0,0.08)',
               color: 'white', border: 'none',
             }}
-            onMouseEnter={e => { (e.currentTarget as HTMLElement).style.boxShadow = '0 8px 36px rgba(59,130,246,0.45), 0 2px 8px rgba(0,0,0,0.10)'; }}
-            onMouseLeave={e => { (e.currentTarget as HTMLElement).style.boxShadow = '0 6px 28px rgba(59,130,246,0.35), 0 2px 8px rgba(0,0,0,0.08)'; }}
           >
-            {isPredicting || uiPhase === 'scanning'
+            {isPredicting || uiPhase === 'physics'
               ? <span className="flex items-center gap-3"><span className="animate-spin inline-block">◌</span>Predicting...</span>
               : <span className="flex items-center gap-3"><span>🎲</span>Predict Next Verdict</span>}
           </button>
         </div>
 
-        {/* Winner reveal card */}
-        {showWinner && lastPredicted && (
-          <div className="mb-8 w-full vp-reveal-pop">
-            <div className="rounded-2xl p-6 sm:p-8 w-full"
-              style={{ backgroundColor: '#fff', border: '1px solid #e2e8f0', boxShadow: '0 4px 24px rgba(0,0,0,0.06), 0 1px 4px rgba(0,0,0,0.04)' }}>
-              <p className="text-slate-400 mb-2 text-center text-sm sm:text-base">Most Likely Verdict:</p>
-              <div className="text-3xl sm:text-4xl font-bold mb-2 text-center" style={{ color: lastPredicted.verdict.color }}>
-                {lastPredicted.verdict.icon} {lastPredicted.verdict.fullName}
-              </div>
-              <p className="text-2xl sm:text-3xl font-semibold mb-3 text-center" style={{ color: lastPredicted.verdict.color }}>
-                {lastPredicted.probability}%
+        {/* ── PHYSICS SCENE ── */}
+        {(uiPhase === 'physics' || uiPhase === 'bars' || uiPhase === 'done') && predictions.length > 0 && (
+          <div
+            className="rounded-2xl overflow-hidden w-full mb-6"
+            style={{
+              backgroundColor: '#fff',
+              border: '1px solid #e2e8f0',
+              boxShadow: '0 4px 24px rgba(0,0,0,0.06), 0 1px 4px rgba(0,0,0,0.04)',
+            }}
+          >
+            <div className="px-4 sm:px-6 pt-4 pb-2 border-b border-slate-100">
+              <p className="text-sm text-slate-400 text-center">
+                {uiPhase === 'physics' ? '⚡ Simulating...' : '🎯 Results'}
               </p>
-              {funMessage && (
-                <p className="text-slate-500 text-sm italic text-center">&ldquo;{funMessage}&rdquo;</p>
-              )}
+            </div>
+
+            {/* Physics drop zone */}
+            <div className="px-2 sm:px-4 pt-4 pb-2">
+              <PhysicsScene
+                predictions={predictions}
+                onSettled={handlePhysicsSettled}
+              />
             </div>
           </div>
         )}
 
-        {/* Probabilities list */}
-        {showResults && predictions.length > 0 && (
-          <div className="rounded-2xl overflow-hidden w-full"
-            style={{ backgroundColor: '#fff', border: '1px solid #e2e8f0', boxShadow: '0 4px 24px rgba(0,0,0,0.06), 0 1px 4px rgba(0,0,0,0.04)' }}>
-            <div className="p-4 sm:p-6 border-b border-slate-100">
-              <h2 className="text-xl sm:text-2xl font-bold text-center text-slate-700">Verdict Probabilities</h2>
+        {/* ── WINNER CARD + BARS (after physics settles) ── */}
+        {(uiPhase === 'bars' || uiPhase === 'done') && lastPredicted && (
+          <>
+            {/* Winner card */}
+            <div className="mb-6 w-full vp-pop-in">
+              <div
+                className="rounded-2xl p-5 sm:p-7 w-full"
+                style={{
+                  backgroundColor: '#fff',
+                  border: `2px solid ${lastPredicted.verdict.color}44`,
+                  boxShadow: `0 4px 28px ${lastPredicted.verdict.color}22, 0 1px 4px rgba(0,0,0,0.04)`,
+                  background: `linear-gradient(135deg, #fff 80%, ${lastPredicted.verdict.color}08)`,
+                }}
+              >
+                <p className="text-slate-400 mb-2 text-center text-sm">Most Likely Verdict</p>
+                <div className="text-3xl sm:text-4xl font-bold mb-1 text-center" style={{ color: lastPredicted.verdict.color }}>
+                  {lastPredicted.verdict.icon} {lastPredicted.verdict.fullName}
+                </div>
+                <p className="text-2xl sm:text-3xl font-semibold mb-3 text-center" style={{ color: lastPredicted.verdict.color }}>
+                  {lastPredicted.probability}%
+                </p>
+                {funMessage && (
+                  <p className="text-slate-500 text-sm italic text-center">&ldquo;{funMessage}&rdquo;</p>
+                )}
+              </div>
             </div>
-            <div className="p-4 sm:p-6 space-y-4">
-              {predictions.map((pred, index) => (
-                <PredictionRow
-                  key={pred.verdict.id}
-                  icon={pred.verdict.icon}
-                  fullName={pred.verdict.fullName}
-                  id={pred.verdict.id}
-                  color={pred.verdict.color}
-                  targetPct={pred.probability}
-                  phase={uiPhase as AnimPhase}
-                  isFirst={index === 0}
-                  dropIndex={index} // 0-based; first item uses reveal-pop, rest use drop-in stagger
-                />
-              ))}
+
+            {/* Probability bars */}
+            <div
+              className="rounded-2xl w-full"
+              style={{
+                backgroundColor: '#fff',
+                border: '1px solid #e2e8f0',
+                boxShadow: '0 4px 24px rgba(0,0,0,0.06), 0 1px 4px rgba(0,0,0,0.04)',
+              }}
+            >
+              <div className="px-5 sm:px-7 pt-5 pb-1 border-b border-slate-100">
+                <h2 className="text-lg sm:text-xl font-bold text-slate-700">Verdict Probabilities</h2>
+              </div>
+              <div className="px-5 sm:px-7 py-4 divide-y divide-slate-50">
+                {predictions.map((pred, i) => (
+                  <ProbabilityBar key={pred.verdict.id} pred={pred} delay={i * 80} />
+                ))}
+              </div>
             </div>
-          </div>
+          </>
         )}
 
         {/* Footer */}
-        <div className="mt-12 text-center text-slate-400 text-xs sm:text-sm">
+        <div className="mt-10 text-center text-slate-400 text-xs sm:text-sm">
           <p>This is just for fun! Don&apos;t take it seriously 😄</p>
           <p className="mt-1">Inspired by Codeforces verdict system</p>
         </div>
